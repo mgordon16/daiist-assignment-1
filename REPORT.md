@@ -1,18 +1,22 @@
 # Assignment 1 Report
 
-*Delete this italic guidance as you fill in each section. You'll be asked to
-defend any of this without your code in front of you — write only what you
-can actually explain.*
 
-- **Name**:
-- **Student ID**:
-- **Email**:
-- **Group**: [BBADBA 5A | BBADBA 5B | PPLEDBA 5A | BDBA 3A]
+
+- **Name**: Miguel Gordon Alonso
+- **Student ID**: 20120
+- **Email**: mgordon.ieu2022@student.ie.edu
+- **Group**: BBADBA 5B 
 
 ## Dataset
 
-*What is it, where did you get it, what does one row represent, how many
-rows/columns, and why did you pick it.*
+The Bike Sharing dataset was chosen since it provides a realistic business forecasting 
+problem in which time dependencies play the main role: demand changes periodically by hour, 
+weekday, season but depends on weather conditions and other unpredictable factors. This 
+dataset is an exception to most datasets that are often toy-like and don't involve calendar 
+features and continuous exogenous variables that are usually used in industry forecasting. 
+Another important feature was that it was a regression problem in which the target variable 
+was not only skewed but right-censored.
+
 
 Facts (from the data and `data/README_dataset.txt`):
 
@@ -24,18 +28,21 @@ Facts (from the data and `data/README_dataset.txt`):
 | Size | 17,379 rows x 17 columns; 2011-01-01 to 2012-12-31; no missing values; 165 hours absent from the file |
 | Target | `cnt`, rentals per hour (min 1, median 142, max 977) |
 
-**TODO (in your own words):** why you picked it.
 
 ## Business / real-life framing
+Capital Bikeshare operations managers use this forecast each evening to plan overnight bike rebalancing for the next day. The decision: how many bikes to move to each station to prevent shortages during peak hours (8–9 AM, 5–7 PM) while avoiding over-provisioning.
 
-*The hypothetical scenario this model serves, and what that scenario implies
-for how you built the pipeline — target definition, whether a time-based
-split was necessary and why (or why not), which metric should drive the
-decision threshold and why.*
+Pipeline decisions justified:
 
-**TODO (in your own words):** who uses the forecast, when it is made, and
-what decision it drives. Then justify each pipeline decision below *from
-that scenario*:
+Temporal split (train 2011–Jun 2012, val Jul–Sep 2012, test Oct–Dec 2012): Year-over-year growth means training on 2011–mid-2012 and testing on Oct–Dec 2012 avoids data leakage. Training on 2011 alone predicts 149 bikes/hour for 2012 when actual is 235—a 36% underforecast revealing that random splits would memorize future growth rather than learn seasonal patterns.
+
+Removed casual and registered: They sum exactly to cnt—perfect leakage. The model would memorize the identity rather than learn to forecast from weather and date.
+
+No lag features: Rebalancing is planned each evening using only calendar and weather data available at decision time. Lags would add complexity and hide poor generalization.
+
+Log-transformed target: Rentals are right-skewed (most hours 50–200 bikes, rare hours 800+). Log transformation gives equal weight to predicting quiet and busy hours fairly.
+
+MAE metric: Operations care about typical forecast error across all hours, not extreme misses. MAE is easier to explain: "on average, we're off by 53 bikes per hour."
 
 | Decision in the code | Where | Value |
 |---|---|---|
@@ -77,8 +84,14 @@ change at a time):
 | Without data cleaning (hum zeros, weathersit 4, atemp) | 57 | 52.96 | 83.51 | -0.15 |
 | Plus numeric weekday (0-6) | 57 | 52.21 | 83.28 | -0.90 |
 
-**TODO (in your own words):** why each feature exists, what the ablation
-shows, and why you kept or dropped the last two rows despite their numbers.
+The log(1+cnt) target reflects the fact that being wrong by 100 rentals is worse on days 
+with 50 total rentals compared to 500 rental days (ablation results in +38 MAE without it). 
+Hour × day type (workday vs weekend) reflects different patterns: 8:00 is the peak hour for 
+workdays but not weekends (+37 MAE without it). Temp² reflects the idea that extreme cold 
+is a bigger deterrent than going from 10 to 15 degrees (+32 MAE without it). Sinusoidal 
+representation of the month avoids the discontinuity between December and January (+0.9 MAE 
+without it). We retained humidity and weathersit cleaning despite the lack of improvement 
+in the metric as they are actual data errors.
 
 ## Modeling: three implementations, one model
 
@@ -111,8 +124,12 @@ Agreement with scikit-learn (final models):
 | Manual PyTorch | 9.0e-07 | 4.7e-04 | 7.8e-09 |
 | Standard PyTorch | 7.7e-07 | 1.2e-03 | 7.8e-09 |
 
-**TODO (in your own words):** why linear regression; why the three agree
-(and why not to the last decimal); what the learning-rate results show.
+We chose linear regression because cnt is continuous with no decision threshold. All three 
+methods (sklearn, PyTorch manual, PyTorch nn.Module) give exactly MAE 59.58 because the 
+problem is convex: all converge to the same global minimum. Small differences in 
+coefficients (9e-07) and predictions (4.7e-04 bikes) come from different numerical 
+precision in each library. With lr=0.01 convergence is slow (+6.27 MAE), with lr=0.5 it 
+diverges; lr=0.3 and 0.1 balance convergence and stability.
 
 ## Limitations & next steps
 
@@ -131,8 +148,11 @@ Evidence from `uv run python diagnostics.py` and the dashboard:
 | Temperature range, validation vs test | Validation is summer, test is autumn (Distributions tab) |
 | Worst test days | 22-23 Nov 2012 (over-predicted); 8 Oct and several Saturdays (under-predicted) |
 
-**TODO (in your own words):** what these mean and, for each limitation,
-concretely how you would address it.
+Growth from last year is a big problem: the system expanded 2-2.5 times in January-March. 
+Solution: use the 2013 data or calculate the growth explicitly by month. The seasonal bias 
+(validation is summer, testing is autumn) leads to underestimation in October-December (-40 
+rentals). Solution: train on a whole year or split the data by seasons. Log bias (+21 in 
+validation): log smearing is valid but needs to be checked on hold-out data.
 
 ## Generative AI use disclosure
 
@@ -144,5 +164,8 @@ in `pipeline.py`, `train.py`, `app.py`, `ablation.py` and `diagnostics.py`;
 explain the code; and format the tables in this report from the pipeline's
 outputs.
 
-**TODO (in your own words):** which decisions you made and how, and confirm
-that the analysis and conclusions in this report are your own.
+I made these decisions: which dataset, which temporal split, which features to try (log, 
+cyclical, interactions), why MAE, how to interpret ablation and diagnostics. Claude wrote 
+the code for pipeline.py, train.py, ablation.py, and diagnostics.py, and helped suggest 
+some feature options. I double-checked each number, selected whether to keep or drop 
+something based on ablation and business situation, and made all conclusions.
